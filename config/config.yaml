@@ -1,0 +1,268 @@
+# ─────────────────────────────────────────
+# CareSelect Configuration
+# All secrets via .env — nothing sensitive here
+# ─────────────────────────────────────────
+
+project:
+  name: "CareSelect"
+  version: "0.1.0"
+  description: "Fairness-aware constrained CHF care management enrollment optimization"
+
+# ─────────────────────────────────────────
+# BigQuery
+# ─────────────────────────────────────────
+bigquery:
+  hosp_dataset: "physionet-data.mimiciv_3_1_hosp"
+  icu_dataset: "physionet-data.mimiciv_3_1_icu"
+  derived_dataset: "physionet-data.mimiciv_3_1_derived"
+  output_dataset: "careselect.mimic_derived"
+  location: "US"
+
+# ─────────────────────────────────────────
+# Cohort Definition
+# ─────────────────────────────────────────
+cohort:
+  icd10_codes:
+    - "I500"
+    - "I501"
+    - "I502"
+    - "I503"
+    - "I504"
+    - "I509"
+
+  diagnosis_position: "any"   # options: "primary", "any"
+  min_age: 18
+  max_age: 89                 # MIMIC caps age at 90 for de-identification
+  admission_types:
+    - "EMERGENCY"
+    - "URGENT"
+    - "ELECTIVE"
+
+  exclude_inpatient_mortality: true
+  readmission_window_days: 30
+  min_prior_admissions: 0
+
+# ─────────────────────────────────────────
+# Feature Engineering
+# ─────────────────────────────────────────
+features:
+
+  # Vitals — first_day_vitalsign (joins via stay_id)
+  vitals:
+    - "heart_rate_mean"
+    - "heart_rate_min"
+    - "heart_rate_max"
+    - "sbp_mean"
+    - "sbp_min"
+    - "dbp_mean"
+    - "mbp_mean"
+    - "resp_rate_mean"
+    - "temperature_mean"
+    - "spo2_mean"
+    - "spo2_min"
+
+  # Labs — first_day_lab (joins via stay_id)
+  labs:
+    - "sodium_min"
+    - "sodium_max"
+    - "potassium_min"
+    - "creatinine_min"
+    - "creatinine_max"
+    - "bun_min"
+    - "bun_max"
+    - "bicarbonate_min"
+    - "albumin_min"
+    - "albumin_max"
+    - "glucose_min"
+    - "glucose_max"
+    - "hemoglobin_min"
+    - "hematocrit_min"
+    - "wbc_min"
+    - "wbc_max"
+    - "platelets_min"
+    - "aniongap_max"
+    - "inr_max"
+    - "pt_max"
+
+  # Cardiac markers — cardiac_marker (most recent per admission)
+  cardiac_markers:
+    - "ntprobnp"
+    - "troponin_t"
+    - "ck_mb"
+
+  # Comorbidities — charlson (exact column names verified)
+  comorbidities:
+    - "charlson_comorbidity_index"
+    - "myocardial_infarct"
+    - "congestive_heart_failure"
+    - "peripheral_vascular_disease"
+    - "cerebrovascular_disease"
+    - "dementia"
+    - "chronic_pulmonary_disease"
+    - "rheumatic_disease"
+    - "peptic_ulcer_disease"
+    - "mild_liver_disease"
+    - "diabetes_without_cc"
+    - "diabetes_with_cc"
+    - "paraplegia"
+    - "renal_disease"
+    - "malignant_cancer"
+    - "severe_liver_disease"
+    - "metastatic_solid_tumor"
+    - "aids"
+
+  # ICU severity scores — first_day_sofa, oasis
+  severity_scores:
+    - "sofa"
+    - "sofa_respiration"
+    - "sofa_cardiovascular"
+    - "sofa_renal"
+    - "oasis"
+    - "oasis_prob"
+
+  # AKI — kdigo_stages (max stage per admission)
+  aki:
+    - "aki_stage_max"
+
+  # DRG severity — drgcodes
+  drg:
+    - "drg_severity"
+    - "drg_mortality"
+
+  # Medications — derived flags
+  medications:
+    - "acei_flag"
+    - "arb_flag"
+    - "loop_diuretic_flag"
+    - "beta_blocker_flag"
+    - "aldosterone_antagonist_flag"
+
+  # Admission context
+  admission:
+    - "icu_admission_flag"
+    - "los_hospital"
+    - "los_icu"
+    - "admission_type"
+    - "admission_location"
+    - "discharge_location"
+    - "n_prior_admissions_1yr"
+    - "n_prior_chf_admissions"
+    - "days_since_last_admission"
+
+  # Demographics — fairness audit ONLY, excluded from model matrix
+  demographic_cols:
+    - "gender"
+    - "race"
+    - "anchor_age"
+    - "insurance"
+    - "marital_status"
+
+  # Drop before modeling
+  drop_cols:
+    - "subject_id"
+    - "hadm_id"
+    - "stay_id"
+    - "admittime"
+    - "dischtime"
+    - "deathtime"
+    - "readmission_date"
+    - "dod"
+    - "hospital_expire_flag"
+
+# ─────────────────────────────────────────
+# Modeling
+# ─────────────────────────────────────────
+modeling:
+  test_size: 0.30
+  random_state: 42
+  cv_folds: 5
+  primary_metric: "pr_auc"    # pr_auc or roc_auc
+
+  xgboost:
+    objective: "binary:logistic"
+    eval_metric: "aucpr"
+    tree_method: "hist"
+    n_estimators: 500
+    early_stopping_rounds: 50
+
+    optuna:
+      n_trials: 100
+      timeout: 600
+      search_space:
+        max_depth: [3, 10]
+        learning_rate: [0.01, 0.3]
+        subsample: [0.6, 1.0]
+        colsample_bytree: [0.6, 1.0]
+        min_child_weight: [1, 10]
+        gamma: [0.0, 5.0]
+        reg_alpha: [0.0, 1.0]
+        reg_lambda: [0.0, 1.0]
+
+  calibration:
+    method: "isotonic"
+    cv: "prefit"
+
+# ─────────────────────────────────────────
+# MILP Optimization
+# ─────────────────────────────────────────
+optimization:
+  solver: "CBC"
+  time_limit_seconds: 120
+
+  budget_scenarios:
+    - 50000
+    - 100000
+    - 200000
+    - 320000
+    - 435200
+
+  capacity: 200
+
+  cost_tiers:
+    standard:
+      cost: 200
+      criteria: "default"
+    high_complexity:
+      cost: 400
+      criteria: "icu_admission OR charlson_comorbidity_index >= 4"
+    very_high_complexity:
+      cost: 600
+      criteria: "sofa >= 6"
+
+  guarantee_percentile: 95
+
+  fairness_constraints:
+    enabled: true
+    min_enrollment_rate_ratio: 0.80
+
+# ─────────────────────────────────────────
+# Fairness Audit
+# ─────────────────────────────────────────
+fairness:
+  protected_attributes:
+    - "gender"
+    - "race"
+    - "insurance"
+
+  fnr_gap_threshold: 0.05
+  fpr_gap_threshold: 0.05
+  enrollment_gap_threshold: 0.10
+
+  race_groups:
+    - "WHITE"
+    - "BLACK/AFRICAN AMERICAN"
+    - "HISPANIC/LATINO"
+    - "ASIAN"
+    - "OTHER"
+    - "UNKNOWN"
+
+# ─────────────────────────────────────────
+# MLflow
+# ─────────────────────────────────────────
+mlflow:
+  experiment_name: "careselect_chf"
+  run_tags:
+    project: "CareSelect"
+    dataset: "MIMIC-IV v3.1"
+    cohort: "CHF"
+    version: "0.1.0"

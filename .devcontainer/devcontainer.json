@@ -1,0 +1,47 @@
+{
+  "name": "CareSelect",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-renderers",
+        "ms-toolsai.vscode-jupyter-cell-tags",
+        "ms-toolsai.vscode-jupyter-slideshow",
+        "vscode.git",
+        "vscode.github",
+        "vscode.ipynb"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true,
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/*.pyc": true,
+          "mlruns/": true
+        }
+      }
+    }
+  },
+  "postCreateCommand": "pip install -e '.[dev]'",
+  "remoteEnv": {
+    "GCP_PROJECT_ID": "${localEnv:GCP_PROJECT_ID}",
+    "BQ_DATASET_HOSP": "${localEnv:BQ_DATASET_HOSP}",
+    "BQ_DATASET_ICU": "${localEnv:BQ_DATASET_ICU}",
+    "BQ_DATASET_DERIVED": "${localEnv:BQ_DATASET_DERIVED}",
+    "BQ_OUTPUT_DATASET": "${localEnv:BQ_OUTPUT_DATASET}",
+    "MLFLOW_TRACKING_URI": "${localEnv:MLFLOW_TRACKING_URI}",
+    "MLFLOW_EXPERIMENT_NAME": "${localEnv:MLFLOW_EXPERIMENT_NAME}",
+    "CARESELECT_SKIP_TUNING": "${localEnv:CARESELECT_SKIP_TUNING}",
+    "CARESELECT_LOG_LEVEL": "${localEnv:CARESELECT_LOG_LEVEL}"
+  },
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": {
+      "label": "MLflow UI",
+      "onAutoForward": "notify"
+    }
+  }
+}
